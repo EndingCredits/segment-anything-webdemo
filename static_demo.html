@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Display Image</title>
+  </head>
+  <body>
+    <!--<img src="{{ url_for('static', filename='uploads/' + filename) }}" alt="Uploaded Image">-->
+
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+    <canvas id="myCanvas"></canvas>
+
+    <script type="module">
+      
+      import { set_image_embedding, set_image_size, run_sam } from "./static/scripts/sam_predictor_helper.js"
+
+      const image_src = "static/uploads/20130410_140546_1.jpg";
+      const embedding_src = "static/upload_embeddings/20130410_140546_1.bin"
+
+      // Load embeddings from URL
+      var image_embedding;
+      fetch(embedding_src)
+        .then(response => response.arrayBuffer())
+        .then(data => {
+        // convert the ArrayBuffer to a Float32Array (assuming that's the data type of your original numpy array)
+        image_embedding = new Float32Array(data);
+
+        // Set image parameters
+        set_image_embedding(image_embedding);
+      });
+
+
+      // Canvas handling
+
+      // Create a new Image object to hold the existing image
+      const img = new Image();
+      const canvas = document.getElementById('myCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Set image size and paste to canvas
+      img.onload = () => {
+        // Set the canvas dimensions to match the existing image
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        set_image_size(img.height, img.width);
+
+        // Draw the existing image on the canvas
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = image_src;
+
+      function add_marker(x, y, color='red', thickness=5) {
+        const marker_size = 10;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = thickness;
+        ctx.beginPath();
+        ctx.moveTo(x-marker_size, y-marker_size);
+        ctx.lineTo(x+marker_size, y+marker_size);
+        ctx.moveTo(x+marker_size, y-marker_size);
+        ctx.lineTo(x-marker_size, y+marker_size);
+        ctx.stroke();
+      }
+
+      function draw_mask(mask_data) {
+        // Define the color to use for true values
+        const maskColor = [0, 0, 255, 128];
+        const alpha = maskColor[3]/255;
+
+        // Create a new ImageData object from the array
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < mask_data.length; i++) {
+          const pixelIndex = i * 4;
+          if (mask_data[i] > 0.0) {
+
+            // Alpha blend
+            const srcColor = imageData.data.subarray(pixelIndex, pixelIndex + 4);
+            const outColor = new Uint8ClampedArray(4);
+            for (let k = 0; k < 3; k++) {
+              outColor[k] = Math.round(
+                (srcColor[k] * alpha + maskColor[k] *  (1 - alpha))
+              );
+            }
+            outColor[3] = 255;
+
+            // If the array element is true, set the pixel color to trueColor
+            imageData.data.set(outColor, pixelIndex);
+          }
+        }
+
+        // Draw the modified ImageData object on the canvas
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      var pos_points = [];
+      var neg_points = [];
+      var mask_data;
+      function update_canvas() {
+        ctx.drawImage(img, 0, 0);
+
+        draw_mask(mask_data);
+
+        for (const point of pos_points){
+            //add_marker(point[0], point[1], 'white', 7);
+            add_marker(point[0], point[1], 'lime');
+        }
+
+        for (const point of neg_points){
+            add_marker(point[0], point[1], 'red');
+        }
+      }
+
+
+      canvas.addEventListener('mousedown', function(event) {
+        // get the coordinates of the mouse click relative to the canvas element
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        // draw a marker at the clicked location
+        //add_marker(x, y, (event.button === 0) ? 'green' : 'red');
+        
+        const pt = [x, y];
+        if (event.button === 0) {
+          pos_points.push(pt);
+        } else if (event.button === 2) {
+          neg_points.push(pt);
+        }
+        console.log(pt);
+
+        // call a function with the coordinates of the click
+        update_mask();
+      });
+
+      // Override default RMB action
+      canvas.addEventListener('contextmenu', function(event) {
+        event.preventDefault(); // disable the default context menu
+      });
+
+      async function update_mask() {
+        // Run ONNX model
+        // use an async context to call onnxruntime functions.
+        mask_data = await run_sam(pos_points, neg_points);
+        update_canvas();
+      }
+
+    </script>
+  </body>
+</html>
