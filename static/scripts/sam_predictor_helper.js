@@ -1,6 +1,6 @@
 
 // create a new session and load the specific model.
-const sam_onnx_model_path = "../static/sam_onnx_quantized_example.onnx"
+const sam_onnx_model_path = "./static/sam_onnx_quantized_example.onnx"
 const ort_session = await ort.InferenceSession.create(sam_onnx_model_path);
 
 // Default inputs
