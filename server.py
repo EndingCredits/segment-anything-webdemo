@@ -41,7 +41,7 @@ def upload():
 
     return redirect(url_for('display_image', filename=filename))
 
-@app.route('/display_image/<filename>')
+@app.route('/<filename>')
 def display_image(filename):
     embedding_filename = get_embedding_filename(filename)
     return render_template('interactive.html',
